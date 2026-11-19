@@ -1,286 +1,66 @@
-💬 Multi-Client Chat Application in C
+# get_info client
 
-Welcome to the Multi-Client Chat Application! 🚀
+Standalone C client. It discovers the server over IPv4 UDP broadcast, then uses TCP for command/result communication. No server IP or port is passed on the command line.
 
-This is a simple chat application built using C socket programming where multiple clients can connect to a single server and communicate with each other.
+## Build
 
-Think of it like this:
-
-                 🖥️ Server
-                    │
-          ┌─────────┼─────────┐
-          │         │         │
-       👤 Client 1 👤 Client 2 👤 Client 3
-          │         │         │
-          └─────────┴─────────┘
-             💬 Chat Together!
-
-
-The goal of this project is to understand how client-server communication works using sockets in C.
-
-📱 Application Overview
-
-The application has two parts:
-
-🖥️ Server
-
-The server is the main hub of the chat application.
-
-It:
-
-Starts and waits for clients.
-Accepts client connections.
-Handles communication between multiple clients.
-Runs on a specific port.
-👤 Client
-
-The client is the application that users run to join the chat.
-
-It:
-
-Connects to the server.
-Uses the server IP address and port.
-Allows multiple clients to join the same chat.
-
-🎯 Simple idea:
-
-Start the server first → Start multiple clients → Everyone joins the same chat! 🎉
-
-📂 Project Structure
-mutli-chat-app-in-c/
-│
-├── 📄 CMakeLists.txt
-├── 📄 README.md
-│
-├── 📁 inc/
-│   ├── client.h
-│   ├── define.h
-│   └── server.h
-│
-└── 📁 src/
-    ├── client.c
-    ├── main.c
-    └── server.c
-
-🛠️ Technologies Used
-
-This project uses some good old-school technology 😎:
-
-💻 C
-🔌 Socket Programming
-🌐 TCP/IP
-⚙️ CMake
-🔨 Make
-🐧 Linux / POSIX
-🖥️ Build and Run the Server
-
-The server must be started first because clients need a running server to connect to.
-
-1️⃣ Go to the project directory
-cd mutli-chat-app-in-c
-
-2️⃣ Configure the server
-cmake -S . -B build -DBUILD_TYPE=server
-
-3️⃣ Go to the build directory
-cd build
-
-4️⃣ Build the server
-
-Use make to build the application:
-
-make
-
-
-🎉 The server executable will now be available inside the build directory.
-
-5️⃣ Start the server
-
-The server requires a port number.
-
-./server 8080
-
-
-Here, 8080 is the port used by the chat server.
-
-🚀 Server is now ready for clients!
-
-👤 Build and Run the Client
-
-Now let's connect some clients! 🎉
-
-Before starting the client, make sure the server is already running.
-
-1️⃣ Go back to the project directory
-
-If you are currently inside build:
-
-cd ..
-
-2️⃣ Remove the existing build
-
-The project uses the same build directory for either the server or client.
-
-So, remove the previous server build:
-
-rm -rf build/
-
-3️⃣ Configure the client
-cmake -S . -B build -DBUILD_TYPE=client
-
-4️⃣ Go to the build directory
-cd build
-
-5️⃣ Build the client
-make
-
-
-🎉 The client executable is now ready.
-
-6️⃣ Start the client
-
-The client requires:
-
-./client <port_number> <server_ip_address>
-
-
-For example:
-
-./client 8080 192.168.1.10
-
-
-Where:
-
-8080 → Server port
-192.168.1.10 → IP address of the machine running the server
-🌐 Real Demo — Multiple Clients Chatting
-
-Let's make it interesting! 😎🔥
-
-Imagine you have three computers connected to the same Wi-Fi/network.
-
-              🌐 Same Network / Wi-Fi
-                       │
-          ┌────────────┼────────────┐
-          │            │            │
-       🖥️ PC 1      💻 PC 2      💻 PC 3
-       Server       Client 1      Client 2
-
-🖥️ PC 1 — Start the Server
-
-Find the IP address of PC 1.
-
-For example:
-
-Server IP = 192.168.1.10
-
-
-Start the server:
-
-./server 8080
-
-
-Now PC 1 is waiting for clients. 👀
-
-💻 PC 2 — Start Client 1
-
-PC 2 must be connected to the same network as PC 1.
+```sh
+cmake -S . -B build
+cmake --build build
+```
 
 Run:
 
-./client 8080 192.168.1.10
+```sh
+./build/client
+```
 
+## UDP discovery protocol (server support required)
 
-Client 1 is now connected! 🎉
+The client broadcasts the following exact ASCII payload to UDP port `37020`:
 
-💻 PC 3 — Start Client 2
+```text
+GET_INFO_DISCOVER_V1
+```
 
-PC 3 should also be connected to the same network.
+The server must reply to the client's UDP source address/port with:
 
-Run:
+```text
+GET_INFO_SERVER_V1 <tcp_port>
+```
 
-./client 8080 192.168.1.10
+Example:
 
+```text
+GET_INFO_SERVER_V1 8080
+```
 
-Now we have:
+The client takes the server IPv4 address from the UDP response's source address and the TCP port from the response payload. It makes up to 10 attempts, immediately on startup and then at 10-second intervals. Each attempt waits up to 2 seconds for a response; the remaining 8 seconds complete the interval. Total discovery duration is approximately 90 seconds if no server responds.
 
-                 🖥️ PC 1
-              🏠 Chat Server
-              192.168.1.10
-                    │
-             🌐 Same Network
-              ┌─────┴─────┐
-              │           │
-           💻 PC 2     💻 PC 3
-          Client 1     Client 2
+## TCP protocol contract for the future server implementation
 
+The client retains the current initial client-ID handshake: immediately after TCP accept, the server sends one native-endian 32-bit integer client ID. This is followed by framed messages:
 
-🎉 Both clients are connected to the same server!
+- Every frame is a 4-byte unsigned payload length in network byte order, followed by exactly that many payload bytes.
+- Server-to-client command payloads are one of the exact command tokens below.
+- Client-to-server result payloads use `RESULT <client_id> SUCCESS\n<output>` or `RESULT <client_id> FAILURE\n<error/output>`.
 
-Now imagine:
+Commands supported by this client:
 
-👤 Client 1: Hello everyone! 👋
+| Command token | Action |
+|---|---|
+| `HOST_INFO` | Return hostname and active non-loopback IPv4 addresses. |
+| `CREATE_FILE` | Create/overwrite `test.txt` in the client's current working directory with `hello world 1 ... 2` and a newline. |
+| `DELETE_LINE` | Remove the first exact matching `hello world 1 ... 2` line from `test.txt`. Missing file/line is treated as a successful no-op. |
+| `DELETE_FILE` | Delete `test.txt`; a missing file is treated as a successful no-op. |
+| `LIST_DOWNLOADS` | Return entries in `$HOME/Downloads`. |
 
-👤 Client 2: Hey! What's up? 😄
+Only these allowlisted command tokens are accepted. The client deliberately does not execute arbitrary shell commands received from the network. Directory listing and host information are implemented using POSIX APIs rather than shelling out.
 
-👤 Client 1: Welcome to the chat! 🎉
+## Network notes
 
-
-And you can add even more clients:
-
-                    🖥️ Server
-                       │
-          🌐 Same Network / Wi-Fi
-                       │
-       ┌───────────────┼───────────────┐
-       │               │               │
-    💻 Client 1     💻 Client 2     💻 Client 3
-       │               │               │
-       └───────────────┼───────────────┘
-                       │
-                    💬 CHAT!
-
-
-🚀 The more clients, the more fun!
-
-⚠️ Important
-
-For the real multi-computer demo:
-
-🖥️ The server computer and client computers should be on the same network.
-🔢 All clients should use the same server port.
-🌐 Clients must use the server computer's IP address, not their own IP.
-🚀 Start the server before starting the clients.
-🔥 Make sure the server port is allowed through the firewall if clients cannot connect.
-🎯 Quick Start
-
-If you just want to try everything on one computer, you can use:
-
-Server
-cmake -S . -B build -DBUILD_TYPE=server
-cd build
-make
-./server 8080
-
-
-Then open another terminal and build the client:
-
-cd ..
-rm -rf build/
-cmake -S . -B build -DBUILD_TYPE=client
-cd build
-make
-./client 8080 127.0.0.1
-
-
-For multiple computers, replace 127.0.0.1 with the server computer's IP address. 🌐
-
-🤝 Have Fun!
-
-This project is a great way to learn how:
-
-C + Sockets + TCP/IP = Client-Server Communication 💻🔌🌐
-
-Start the server, invite some clients, and let the chatting begin! 💬🔥
-
-Happy Coding! 🚀
+- UDP broadcast discovery normally works only within the same broadcast domain/VLAN. Routers generally do not forward broadcast packets.
+- Allow inbound UDP port `37020` on the server and the advertised TCP port through the server firewall.
+- The server should reply to the source address/port of the discovery datagram (not to a hard-coded client port).
+- Multiple network interfaces, Wi-Fi client isolation, VLANs, VPNs, and host firewalls can prevent discovery.
+- This repository contains only the client. Until the server implements the UDP response and framed TCP protocol described above, discovery/command exchange will not interoperate with the old server implementation.
