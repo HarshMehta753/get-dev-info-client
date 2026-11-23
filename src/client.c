@@ -34,7 +34,7 @@ static int recv_all(int fd, void *data, size_t length)
             if (errno == EINTR) continue;
             return -1;
         }
-        if (n == 0) return -1;
+        if (n == 0) { errno = ECONNRESET; return -1; }
         received += (size_t)n;
     }
     return 0;
@@ -237,7 +237,8 @@ static int command_host_info(char *output, size_t capacity)
         }
     }
     freeifaddrs(interfaces);
-    if (used == 0) snprintf(output, capacity, "Hostname: %s\nNo active non-loopback IPv4 address found.\n", hostname);
+    if (used == strlen("Hostname: ") + strlen(hostname) + strlen("\nIPv4 addresses:\n"))
+        append_output(output, capacity, &used, "No active non-loopback IPv4 address found.\n");
     return 0;
 }
 
@@ -388,10 +389,12 @@ int client_process(void)
 {
     for (;;) {
         char *command = NULL;
+        errno = 0;
         int frame_length = recv_frame(g_tcp_socket, &command);
         if (frame_length < 0) {
             if (errno != 0) perror("Receiving command");
-            fprintf(stderr, "Server disconnected or sent an invalid frame.\n");
+            else fprintf(stderr, "Server closed the TCP connection.\n");
+            fprintf(stderr, "Command processing stopped.\n");
             return -1;
         }
 
@@ -429,4 +432,5 @@ void client_cleanup(void)
         close(g_tcp_socket);
         g_tcp_socket = -1;
     }
+    g_client_id = -1;
 }
