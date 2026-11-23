@@ -1,7 +1,9 @@
 #include "client.h"
+#include <signal.h>
 
 int main(void)
 {
+    signal(SIGPIPE, SIG_IGN);
     printf("Client starting. Discovering server...\n");
 
     if (client_init() != 0) {
